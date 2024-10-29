@@ -1,41 +1,54 @@
 const std = @import("std");
 const rl = @import("raylib");
 
-const SPEED = 400;
+const SPEED = 4;
 
 pub fn main() !void
 {
-	var path : [100]u8 = undefined;
-	_ = try std.fs.cwd().realpath("/", &path);
-	std.debug.print("{s}\n", .{try std.fs.cwd().realpath(".", &path)});
 	rl.setConfigFlags(rl.ConfigFlags{.msaa_4x_hint = true});
+
 	rl.initWindow(1080, 720, "Jogo");
 	defer rl.closeWindow();
-	var pos = rl.Vector2{ .x = 0, .y = 0};
-	var camera = std.mem.zeroes(rl.Camera);
-	camera.position = rl.Vector3{ .x = 0.0, .y = 10.0, .z = 10.0};
-	camera.target = rl.Vector3{ .x = 0.0, .y = 0.0, .z = 0.0 };
-	camera.up = rl.Vector3{ .x = 0.0, .y = 1.0, .z = 0.0 };
-	camera.fovy = 45.0;
-	camera.projection = rl.CameraProjection.camera_perspective; 
+
+	var camera = rl.Camera{ .position = rl.Vector3{ .x = -4.0, .y = 1.0, .z = 0.0},
+		.target = rl.Vector3{ .x = 1.0, .y = 1.0, .z = 0.0},
+		.up = rl.Vector3{ .x = 0.0, .y = 1.0, .z = 0.0},
+		.fovy = 45.0,
+		.projection = rl.CameraProjection.camera_perspective,
+	};
+
+	rl.disableCursor();
+
 	while (!rl.windowShouldClose())
 	{
-		var delta = rl.Vector2{ .x = 0, .y = 0};
-		delta.x = @floatFromInt(@intFromBool(rl.isKeyDown(rl.KeyboardKey.key_right)) - @as(i32, @intFromBool(rl.isKeyDown(rl.KeyboardKey.key_left))) );
-		delta.y = @floatFromInt(@intFromBool(rl.isKeyDown(rl.KeyboardKey.key_down)) - @as(i32, @intFromBool(rl.isKeyDown(rl.KeyboardKey.key_up))) );
-		delta = delta.normalize();
-		delta = delta.multiply(.{ .x = rl.getFrameTime() * SPEED, .y = rl.getFrameTime() * SPEED} );
-		pos = pos.add(delta);
+		var mov = rl.Vector3{
+			.x = @floatFromInt(@intFromBool(rl.isKeyDown(rl.KeyboardKey.key_w)) - @as(i32, @intFromBool(rl.isKeyDown(rl.KeyboardKey.key_s))) ),
+			.y = @floatFromInt(@intFromBool(rl.isKeyDown(rl.KeyboardKey.key_d)) - @as(i32, @intFromBool(rl.isKeyDown(rl.KeyboardKey.key_a))) ),
+			.z = 0,
+		};
+		mov = mov.normalize();
+		mov = mov.multiply(.{ .x = rl.getFrameTime() * SPEED, .y = rl.getFrameTime() * SPEED, .z = 0} );
+		const rot = rl.Vector3{.x = rl.getMouseDelta().x / 5.4, .y = rl.getMouseDelta().y / 5.4, .z = 0};
+		
+		rl.updateCameraPro(&camera, mov, rot, 0);
+		
 		rl.beginDrawing();
+		defer rl.endDrawing();
+
 		rl.clearBackground(rl.Color.ray_white);
 		{
 			rl.beginMode3D(camera);
-			rl.drawCube(rl.Vector3{ .x = 0.0, .y = 0.0, .z = 0.0 }, 2, 2, 2, rl.Color.blue);
-			rl.drawPlane(rl.Vector3{ .x = 0.0, .y = 0.0, .z = 0.0 }, rl.Vector2{ .x = 8.0, .y = 8.0 }
-				, rl.Color.light_gray);
 			defer rl.endMode3D();
+			rl.drawPlane(rl.Vector3{ .x = 6.0, .y = 0.0, .z = 6.0 }, rl.Vector2{ .x = 16.0, .y = 16.0 },
+					rl.Color.light_gray);
+			for (0..4) |i|
+			{
+				for (0..4) |j|
+				{
+					rl.drawCube(rl.Vector3{ .x = @as(f32, @floatFromInt(i)) * 4, .y = 1, .z = @as(f32, @floatFromInt(j)) * 4},
+						2, 2, 2, rl.Color.dark_blue);
+				}
+			}
 		}
-		rl.drawRectangleV(pos, .{.x = 100, .y = 100}, rl.Color.red);
-		defer rl.endDrawing();
 	}
 }
