@@ -21,17 +21,17 @@ const Mesa = struct {
 		switch (self.state)
 		{
 			.client, .vampire => {
-				if (secs - self.timestamp < 15)
+				if (secs - self.timestamp < PROGRESS_ANIM_LEN)
 				{
 					self.progress = @intFromFloat(secs - self.timestamp);
 				}
-				else if (secs - self.timestamp > 15)
+				else if (secs - self.timestamp > PROGRESS_ANIM_LEN)
 				{
-					self.state = State.empty;
+					self.state = .empty;
 				}
 			},
 			.empty => {
-				const rng = rl.getRandomValue(0, 100000);
+				const rng = rl.getRandomValue(0, 100000); // TODO Melhorar isso aqui
 				if (rng < 1)
 				{
 					self.spawnVampire();
@@ -41,7 +41,12 @@ const Mesa = struct {
 					self.spawnClient();
 				}
 			},
-			else => self.progress = 0,
+			.success_client, .success_vampire => {
+				if (secs - self.timestamp > SUCCESS_ANIM_LEN)
+				{
+					self.state = .empty;
+				}
+			},
 		}
 	}
 
@@ -52,7 +57,8 @@ const Mesa = struct {
 			.client => rl.Color.yellow,
 			.vampire => rl.Color.maroon,
 			.empty => rl.Color.dark_blue,
-			.success_client, .success_vampire => rl.Color.green,
+			.success_client => rl.Color.lime,
+			.success_vampire => rl.Color.green,
 		});
 		switch (self.state)
 		{
@@ -66,8 +72,20 @@ const Mesa = struct {
 	{
 		switch (self.state)
 		{
-			.vampire => self.state = .empty,
-			.empty => self.spawnClient(),
+			.vampire => {
+				self.state = .success_vampire;
+				self.progress = 0;
+				self.timestamp = rl.getTime();
+			},
+			.client => {
+				if (has_coffe)
+				{
+					has_coffe = false;
+					self.state = .success_client;
+					self.progress = 0;
+					self.timestamp = rl.getTime();
+				}
+			},
 			else => {}
 		}
 	}
@@ -103,6 +121,9 @@ const Maquina = struct {
 };
 
 const SPEED = 4;
+const PROGRESS_ANIM_LEN = 15;
+const SUCCESS_ANIM_LEN = 2;
+const INTERACTION_MAX_DIST = 8.0;
 var has_coffe = false;
 
 pub fn main() !void
@@ -118,17 +139,18 @@ pub fn main() !void
 		}
 	}
 	var maquina_frente = Maquina{ .pos = rl.Vector3{.x = -4, .y = 1, .z = 6}};
-	var maquina_tras = Maquina{ .pos = rl.Vector3{.x = 20, .y = 1, .z = 8}};
+	var maquina_fundo = Maquina{ .pos = rl.Vector3{.x = 20, .y = 1, .z = 8}};
 	rl.setConfigFlags(rl.ConfigFlags{.msaa_4x_hint = true});
 
 	rl.initWindow(1080, 720, "Jogo");
 	defer rl.closeWindow();
 
-	var clock_frames: [15]rl.Texture2D = undefined;
-	for (0..15) |i|
+	// Gera os quadros da barra de progresso
+	var clock_frames: [PROGRESS_ANIM_LEN]rl.Texture2D = undefined;
+	for (0..PROGRESS_ANIM_LEN) |i|
 	{
 		var image = rl.genImageColor(210, 64, rl.Color.gray);
-		rl.imageDrawRectangle(&image, 2, 2, 210 - 14 * @as(i32, @intCast(i)) - 4, 60, rl.Color.green);
+		rl.imageDrawRectangle(&image, 2, 2, 210 - (PROGRESS_ANIM_LEN - 1) * @as(i32, @intCast(i)) - 4, 60, rl.Color.green);
 		defer rl.unloadImage(image);
 		clock_frames[i] = rl.loadTextureFromImage(image); // TODO Transformar em circulos
 	}
@@ -169,17 +191,18 @@ pub fn main() !void
 			for (mesas, 0..) |mesa, i|
 			{
 				const collision = rl.getRayCollisionBox(ray,
-					rl.BoundingBox{ .min = rl.Vector3{ .x = mesa.pos.x - Mesa.size / 2, .y = mesa.pos.y - Mesa.size / 2, .z = mesa.pos.z - Mesa.size / 2 },
-					.max = rl.Vector3{ .x = mesa.pos.x + Mesa.size / 2, .y = mesa.pos.y + Mesa.size / 2, .z = mesa.pos.z + Mesa.size / 2 }});
-				if (collision.hit)
+					rl.BoundingBox{ .min = mesa.pos.subtractValue(Mesa.size * 0.5), .max = mesa.pos.addValue(Mesa.size * 0.5)});
+				if (collision.hit and collision.distance < INTERACTION_MAX_DIST)
 				{
 					mesas[i].onMouseClick();
 					break;
 				}
 			}
-			const collision = rl.getRayCollisionBox(ray,
+			const collision_frente = rl.getRayCollisionBox(ray,
 				rl.BoundingBox{ .min = maquina_frente.pos.subtract(Maquina.size.scale(0.5)), .max = maquina_frente.pos.add(Maquina.size.scale(0.5))});
-			if (collision.hit)
+			const collision_fundo = rl.getRayCollisionBox(ray,
+				rl.BoundingBox{ .min = maquina_fundo.pos.subtract(Maquina.size.scale(0.5)), .max = maquina_fundo.pos.add(Maquina.size.scale(0.5))});
+			if ((collision_frente.hit and collision_frente.distance < INTERACTION_MAX_DIST) or (collision_fundo.hit and collision_fundo.distance < INTERACTION_MAX_DIST))
 			{
 				Maquina.onMouseClick();
 			}
@@ -204,7 +227,7 @@ pub fn main() !void
 				mesa.draw(camera, &clock_frames);
 			}
 			maquina_frente.draw();
-			maquina_tras.draw();
+			maquina_fundo.draw();
 		}
 		rl.drawFPS(0, 0);
 		if(has_coffe)
