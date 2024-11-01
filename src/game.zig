@@ -53,18 +53,15 @@ const Mesa = struct {
 
 	fn draw(self: Mesa, bil_texture: []rl.Texture2D) void
 	{
-		rl.drawCube( self.pos, size, size, size, switch (self.state)
-		{
-			.client => rl.Color.yellow,
-			.vampire => rl.Color.maroon,
-			.empty => rl.Color.dark_blue,
-			.success_client => rl.Color.lime,
-			.success_vampire => rl.Color.green,
-		});
+		switch (self.state) {
+			.client => rl.drawModel(vox_models[1], self.pos, 0.1, rl.Color.white),
+			.vampire => rl.drawModel(vox_models[2], self.pos, 0.1, rl.Color.white),
+			else => rl.drawModel(vox_models[0], self.pos, 0.1, rl.Color.white),
+		}
 		switch (self.state)
 		{
 			.client, .vampire => rl.drawBillboard(camera, bil_texture[self.progress],
-				self.pos.add(rl.Vector3{.x = 0, .y = 1.5, .z = 0}), 1, rl.Color.white),
+				self.pos.add(rl.Vector3{.x = 0, .y = 2, .z = 0}), 1, rl.Color.white),
 			else => {},
 		}
 	}
@@ -121,15 +118,18 @@ const Maquina = struct {
 	}
 };
 
-const SPEED = 4;
+const SPEED = 5;
+const MESA_NUM = 16;
+const MESA_ROW_LEN = 4;
 const PROGRESS_ANIM_LEN = 15;
 const SUCCESS_ANIM_LEN = 2;
-const INTERACTION_MAX_DIST = 8.0;
+const INTERACTION_MAX_DIST = 7.0;
+const MODEL_NUM = 3;
 
-var mesas : [16]Mesa = undefined;
+var mesas : [MESA_NUM]Mesa = undefined;
 var clock_frames: [PROGRESS_ANIM_LEN]rl.Texture2D = undefined;
-var maquina_frente = Maquina{ .pos = rl.Vector3{.x = -4, .y = 1, .z = 6}};
-var maquina_fundo = Maquina{ .pos = rl.Vector3{.x = 20, .y = 1, .z = 8}};
+var maquina_frente = Maquina{ .pos = rl.Vector3{.x = -2, .y = 1, .z = 6}};
+var maquina_fundo = Maquina{ .pos = rl.Vector3{.x = 16, .y = 1, .z = 8}};
 pub var camera = rl.Camera{ .position = rl.Vector3{ .x = -4.0, .y = 1.0, .z = 0.0},
 	.target = rl.Vector3{ .x = 1.0, .y = 1.0, .z = 0.0},
 	.up = rl.Vector3{ .x = 0.0, .y = 1.0, .z = 0.0},
@@ -137,16 +137,23 @@ pub var camera = rl.Camera{ .position = rl.Vector3{ .x = -4.0, .y = 1.0, .z = 0.
 	.projection = rl.CameraProjection.camera_perspective,
 };
 
+const vox_paths: [MODEL_NUM][*:0]const u8 = [_][*:0]const u8{"res/model/mesa.vox", "res/model/mesa_cliente.vox", "res/model/mesa_vampiro.vox"};
+
 var has_coffe = false;
-var lifes: u8 = 3;
+pub var lifes: u8 = 3;
+var vox_models: [MODEL_NUM]rl.Model = undefined;
 
 pub fn init() void
 {
-	for (0..4) |i|
+	for (0..MODEL_NUM) |i|
 	{
-		for (0..4) |j|
+		vox_models[i] = rl.loadModel(vox_paths[i]);
+	}
+	for (0..MESA_ROW_LEN) |i|
+	{
+		for (0..MESA_ROW_LEN) |j|
 		{
-			mesas[i * 4 + j] = Mesa{ .pos = rl.Vector3{ .x = @as(f32, @floatFromInt(i)) * 4, .y = 1,
+			mesas[i * MESA_ROW_LEN + j] = Mesa{ .pos = rl.Vector3{ .x = @as(f32, @floatFromInt(i)) * 4, .y = 0,
 				.z = @as(f32, @floatFromInt(j)) * 4}};
 		}
 	}
@@ -165,6 +172,20 @@ pub fn deinit() void
 	for (clock_frames) |texture|
 	{
 		rl.unloadTexture(texture);
+	}
+	for (0..MODEL_NUM) |i|
+	{
+		 rl.unloadModel(vox_models[i]);
+	}
+}
+
+pub fn restart() void
+{
+	camera.position = rl.Vector3{ .x = -4.0, .y = 1.0, .z = 0.0};
+	camera.target = rl.Vector3{ .x = 1.0, .y = 1.0, .z = 0.0};
+	for (0..MESA_NUM) |i|
+	{
+		mesas[i].state = .empty;
 	}
 }
 
@@ -187,8 +208,10 @@ pub fn update() void
 
 		for (mesas, 0..) |mesa, i|
 		{
-			const collision = rl.getRayCollisionBox(ray,
-				rl.BoundingBox{ .min = mesa.pos.subtractValue(Mesa.size * 0.5), .max = mesa.pos.addValue(Mesa.size * 0.5)});
+			var box = rl.getModelBoundingBox(vox_models[1]);
+			box.min = box.min.scale(0.1).add(mesa.pos);
+			box.max = box.max.scale(0.1).add(mesa.pos);
+			const collision = rl.getRayCollisionBox(ray, box);
 			if (collision.hit and collision.distance < INTERACTION_MAX_DIST)
 			{
 				mesas[i].onMouseClick();
@@ -204,10 +227,9 @@ pub fn update() void
 			Maquina.onMouseClick();
 		}
 	}
-	for (mesas, 0..) |mesa, i|
+	for (0..MESA_NUM) |i|
 	{
 		mesas[i].update(rl.getTime());
-		_ = mesa.progress;
 	}
 }
 
@@ -220,13 +242,13 @@ pub fn draw() void
 	rl.drawFPS(0, 48);
 	if(has_coffe)
 	{
-		rl.drawRectangle(100, 100, 100, 100, rl.Color.black);
+		rl.drawRectangle(1080 - 64, 0, 64, 64, rl.Color.black);
 	}
 }
 
 pub fn draw3d() void
 {
-	rl.drawPlane(rl.Vector3{ .x = 6.0, .y = 0.0, .z = 6.0 }, rl.Vector2{ .x = 16.0, .y = 16.0 },
+	rl.drawPlane(rl.Vector3{ .x = 8.0, .y = 0.0, .z = 8.0 }, rl.Vector2{ .x = 24.0, .y = 24.0 },
 			rl.Color.light_gray);
 	for (mesas) |mesa|
 	{
